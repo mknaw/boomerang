@@ -1,0 +1,9 @@
+Summarize the following conversation messages into a concise summary that preserves the key information, decisions, and context needed for continued conversation.
+
+Focus on:
+- Key facts and information exchanged
+- Decisions made or conclusions reached
+- Important context needed for understanding future messages
+- Any pending questions or unresolved topics
+
+Keep the summary concise but complete enough that someone reading it would understand the essential context of the conversation.

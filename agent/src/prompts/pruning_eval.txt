@@ -1,0 +1,27 @@
+Evaluate the following messages for context window pruning. For each message, decide what action to take.
+
+Actions:
+- "persist": Save to long-term memory (important facts, user preferences, key decisions)
+- "summarize": Include in a summary of removed messages (context worth preserving briefly)
+- "both": Both persist to memory AND include in summary
+- "drop": Remove without preservation (routine exchanges, outdated info, redundant content)
+
+Guidelines:
+- User preferences and explicitly stated facts should be persisted
+- Important decisions or conclusions should be persisted or summarized
+- Routine greetings, acknowledgments, and small talk can be dropped
+- Tool call results with useful data should be summarized
+- Older messages with outdated information can be dropped
+
+Respond with a JSON array. Each element should have:
+- "index": the message index
+- "action": one of "persist", "summarize", "both", or "drop"
+- "memory_key": (optional) a short descriptive key for persistence, e.g. "user_timezone_preference"
+- "reason": brief explanation of your decision
+
+Example response:
+[
+  {"index": 3, "action": "persist", "memory_key": "user_name", "reason": "User stated their name"},
+  {"index": 5, "action": "summarize", "memory_key": null, "reason": "Contains search results worth preserving in context"},
+  {"index": 7, "action": "drop", "memory_key": null, "reason": "Routine acknowledgment"}
+]

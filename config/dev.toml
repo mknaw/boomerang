@@ -1,0 +1,29 @@
+[ai]
+provider = "openai"  # or "openrouter"
+model = "gpt-5-mini"
+api_key = "YOUR_API_KEY"
+
+[tools]
+tavily_api_key = "YOUR_TAVILY_API_KEY"
+
+[agent]
+host = "0.0.0.0"
+port = 9080
+context_window_size = 50
+
+[telegram]
+bot_token = "YOUR_BOT_TOKEN"
+adapter_key = "telegram-adapter"
+bind_address = "127.0.0.1:9081"
+
+[restate]
+ingress_url = "http://127.0.0.1:8080"
+
+[memory]
+# Path to store persistent memory (notes, facts, etc.)
+# Defaults to ~/.boomerang/memory if not specified
+# scratch_space_path = "/custom/path/to/memory"
+
+[telemetry]
+enabled = true
+otlp_endpoint = "http://localhost:4318"

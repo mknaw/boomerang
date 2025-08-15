@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+.env
+.env.*
+*.log
+.DS_Store
+.idea/
+.vscode/
+restate-data/
+.aider*

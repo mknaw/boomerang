@@ -1,0 +1,52 @@
+services:
+  restate:
+    image: docker.io/restatedev/restate:latest
+    ports:
+      - "9080:9080"
+      - "8080:8080"
+      - "5432:5432"
+    volumes:
+      - restate_data:/data
+
+  boomerang:
+    build: .
+    depends_on:
+      - restate
+      - otel-collector
+    restart: always
+    command: ["/usr/local/bin/boomerang", "--config", "/etc/config.toml"]
+    volumes:
+      - boomerang_memory:/data/memory
+      - ${BOOMERANG_CONFIG:-./config.toml}:/etc/config.toml:ro
+    environment:
+      - MEMORY__SCRATCH_SPACE_PATH=/data/memory
+      - TELEMETRY__ENABLED=true
+      - TELEMETRY__OTLP_ENDPOINT=http://otel-collector:4318
+
+  register:
+    image: docker.io/restatedev/restate:latest
+    depends_on:
+      - restate
+      - boomerang
+    environment:
+      - RESTATE_ADMIN_URL=http://restate:9070
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        restate -y deployments register http://boomerang:9080 --force
+    restart: "no"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    command: ["--config=/etc/otel-collector-config.yaml"]
+
+volumes:
+  restate_data:
+  boomerang_memory:

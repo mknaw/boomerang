@@ -1,0 +1,74 @@
+[workspace]
+members = ["agent", "common", "restate-client", "adapters/telegram"]
+resolver = "2"
+
+[package]
+name = "boomerang"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "boomerang"
+path = "src/main.rs"
+
+[dependencies]
+agent = { path = "agent" }
+common = { path = "common" }
+restate-client = { path = "restate-client" }
+telegram-adapter = { path = "adapters/telegram" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+restate-sdk = "0.6"
+
+# OpenTelemetry dependencies for the binary
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+[workspace.dependencies]
+config = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+tokio = { version = "1.0", features = ["full", "macros"] }
+anyhow = "1.0.99"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0.142"
+
+# Server-specific dependencies
+axum = { version = "0.7", features = ["macros"] }
+schemars = { version = "1.0.0", features = ["uuid1", "chrono04"] }
+chrono = { version = "=0.4.39", features = ["serde"] }
+chrono-tz = "0.10"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+http = "1.1"
+jsonwebtoken = "9.3"
+
+# Agent-specific dependencies
+async-stream = "0.3.6"
+async-trait = "0.1.89"
+futures = "0.3.31"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+rmcp = "0.5.0"
+tokio-stream = "0.1.17"
+tokio-util = { version = "0.7.16", features = ["io"] }
+
+# Scheduling dependencies
+tokio-cron-scheduler = "0.14"
+cron = "0.13"
+
+# OpenTelemetry dependencies
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics", "logs", "trace"] }
+opentelemetry-otlp = { version = "0.27", features = ["http-proto", "reqwest-client", "metrics", "logs", "trace"] }
+opentelemetry-semantic-conventions = "0.27"
+tracing-opentelemetry = "0.28"
+
+# Adapter dependencies
+teloxide = { version = "0.15", default-features = false, features = [ "ctrlc_handler", "macros", "rustls"] }

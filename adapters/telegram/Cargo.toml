@@ -1,0 +1,21 @@
+[package]
+name = "telegram-adapter"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "telegram_adapter"
+path = "src/lib.rs"
+
+[dependencies]
+common = { path = "../../common" }
+restate-client = { path = "../../restate-client" }
+async-trait = { workspace = true }
+teloxide = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+restate-sdk = "0.6.0"
