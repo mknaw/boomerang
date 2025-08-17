@@ -19,16 +19,16 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; [
+            protobuf
+
             (rust-bin.stable.latest.minimal.override {
               extensions = [ "clippy" "rust-analyzer" "rust-docs" "rust-src" ];
             })
             # We use nightly rustfmt features.
             (rust-bin.selectLatestNightlyWith (toolchain: toolchain.rustfmt))
+
             bacon
           ];
-
-          # Optional: Make rust-analyzer work smoothly
-          # RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
       });
 }

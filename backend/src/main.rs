@@ -1,3 +1,4 @@
+use boomerang::{ai::session::establish_chat_session, config::Config};
 use chrono::{DateTime, Utc};
 use dropshot::{
     ApiDescription, ConfigDropshot, ConfigLogging, HttpError, HttpResponseCreated, HttpResponseOk,
@@ -39,6 +40,13 @@ type ApiState = ();
 async fn get_schedules(
     _rqctx: RequestContext<ApiState>,
 ) -> Result<HttpResponseOk<Vec<Schedule>>, HttpError> {
+    // TODO: Get config from request context or application state
+    let config = Config::load()
+        .map_err(|e| HttpError::for_internal_error(format!("Config load error: {}", e)))?;
+
+    // Call the AI session establishment function (PoC code moved to ai/session.rs)
+    establish_chat_session(&config.ai).await;
+
     let dummy_schedules = vec![
         Schedule {
             id: Uuid::new_v4(),
@@ -89,15 +97,17 @@ async fn create_schedule(
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    // Load configuration first
+    let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
+
     let mut api = ApiDescription::new();
     api.register(get_schedules).unwrap();
     api.register(create_schedule).unwrap();
 
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port = 3333;
-
-    let config = ConfigDropshot {
-        bind_address: format!("{}:{}", host, port).parse().unwrap(),
+    let dropshot_config = ConfigDropshot {
+        bind_address: format!("{}:{}", config.server.host, config.server.port)
+            .parse()
+            .map_err(|e| format!("Invalid bind address: {}", e))?,
         request_body_max_bytes: 1024 * 1024,
         default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
         log_headers: vec![],
@@ -108,10 +118,13 @@ async fn main() -> Result<(), String> {
     };
     let logger = log_config.to_logger("boomerang").unwrap();
 
-    let server = dropshot::HttpServerStarter::new(&config, api, (), &logger)
+    let server = dropshot::HttpServerStarter::new(&dropshot_config, api, (), &logger)
         .map_err(|error| format!("failed to create server: {}", error))?
         .start();
 
-    println!("Server running on http://{}:{}", host, port);
+    println!(
+        "Server running on http://{}:{}",
+        config.server.host, config.server.port
+    );
     server.await
 }
