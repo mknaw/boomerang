@@ -101,7 +101,9 @@ impl Default for Usage {
     }
 }
 
-pub type ToolExecutor = std::sync::Arc<dyn Fn(&str, &str) -> anyhow::Result<String> + Send + Sync>;
+pub type ToolExecutor = std::sync::Arc<
+    dyn Fn(&str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send>> + Send + Sync
+>;
 
 #[derive(Clone)]
 pub struct ToolSpec {

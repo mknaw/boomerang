@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub server: ServerConfig,
     pub ai: AIConfig,
+    pub tools: ToolConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,11 @@ pub struct ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIConfig {
     pub openai_api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolConfig {
+    pub tavily_api_key: String,
 }
 
 impl Config {
@@ -30,6 +36,7 @@ impl Config {
     /// - BOOMERANG_SERVER__HOST=0.0.0.0
     /// - BOOMERANG_SERVER__PORT=8080
     /// - BOOMERANG_AI__OPENAI_API_KEY=sk-...
+    /// - BOOMERANG_TOOLS__TAVILY_API_KEY=tvly-...
     pub fn load() -> Result<Self, config::ConfigError> {
         let env = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
         let config_file = format!("config/{}", env);

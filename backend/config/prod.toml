@@ -4,3 +4,6 @@ port = 3333
 
 [ai]
 openai_api_key = "set-via-environment-variable"
+
+[tools]
+tavily_api_key = "set-via-environment-variable"

@@ -7,6 +7,7 @@ use async_stream::try_stream;
 use futures::TryStreamExt;
 use tokio_util::{codec::{FramedRead, LinesCodec}, io::StreamReader};
 use tokio_stream::StreamExt;
+use tracing::{debug, trace};
 
 use crate::ai::{
     provider::{Provider, ProviderError, CompletionResponse, MessageStream},
@@ -167,8 +168,13 @@ impl Provider for OpenAIProvider {
         messages: &[Message],
         tools: Option<&[rmcp::model::Tool]>,
     ) -> Result<CompletionResponse, ProviderError> {
+        debug!("OpenAI API call - model: {}, messages: {}, tools: {}", 
+               self.model, messages.len(), tools.map_or(0, |t| t.len()));
+        
         let payload = self.create_request_payload(system_prompt, messages, tools, false);
+        trace!("OpenAI request payload: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
 
+        debug!("Making OpenAI API request to chat/completions");
         let response = self
             .client
             .post("https://api.openai.com/v1/chat/completions")
@@ -177,12 +183,15 @@ impl Provider for OpenAIProvider {
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
+        debug!("OpenAI API response status: {}", response.status());
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            debug!("OpenAI API error response: {}", error_text);
             return Err(ProviderError::RequestFailed(format!(
                 "HTTP {}: {}",
                 status,
@@ -190,12 +199,21 @@ impl Provider for OpenAIProvider {
             )));
         }
 
-        let json_response: Value = response
-            .json()
-            .await
+        let response_text = response.text().await
+            .map_err(|e| ProviderError::InvalidRequest(e.to_string()))?;
+        trace!("OpenAI raw response: {}", response_text);
+
+        let json_response: Value = serde_json::from_str(&response_text)
             .map_err(|e| ProviderError::InvalidRequest(e.to_string()))?;
 
-        self.parse_response(&json_response)
+        let completion_response = self.parse_response(&json_response)?;
+        debug!("OpenAI response parsed successfully - usage: {:?}", completion_response.usage);
+        
+        if let Some(tool_calls) = &completion_response.message.tool_calls {
+            debug!("OpenAI response contains {} tool calls", tool_calls.len());
+        }
+
+        Ok(completion_response)
     }
 
     async fn stream(

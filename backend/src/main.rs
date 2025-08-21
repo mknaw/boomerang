@@ -7,6 +7,7 @@ use dropshot::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 struct Schedule {
@@ -91,10 +92,19 @@ async fn create_schedule(
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    // Initialize tracing subscriber for debug logging
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "boomerang=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     // Load configuration first
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
     // Call the AI session establishment function (PoC code moved to ai/session.rs)
-    let _ = establish_chat_session(&config.ai).await;
+    let _ = establish_chat_session(&config.ai, &config.tools).await;
 
     let mut api = ApiDescription::new();
     api.register(get_schedules).unwrap();
