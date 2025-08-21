@@ -1,78 +1,27 @@
-/// This file is more or less copypasta'd from Goose, I just don't want to have to have env vars
-/// for API keys.
-use std::{collections::HashMap, io, time::Duration};
-
-use anyhow::Result;
-use async_stream::try_stream;
+use std::time::Duration;
 use async_trait::async_trait;
+use anyhow::Result;
+use reqwest::Client;
+use serde_json::{json, Value};
+use async_stream::try_stream;
 use futures::TryStreamExt;
-use goose::{
-    conversation::message::Message,
-    impl_provider_default,
-    model::ModelConfig,
-    providers::{
-        base::{
-            ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata, ProviderUsage, Usage,
-        },
-        embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse},
-        errors::ProviderError,
-        formats::openai::{
-            create_request, get_usage, response_to_message, response_to_streaming_message,
-        },
-        utils::{
-            ImageFormat, emit_debug_trace, get_model, handle_response_openai_compat,
-            handle_status_openai_compat,
-        },
-    },
-};
-use reqwest::{Client, Response, StatusCode};
-use rmcp::model::Tool;
-use serde_json::{Value, json};
-use tokio::pin;
+use tokio_util::{codec::{FramedRead, LinesCodec}, io::StreamReader};
 use tokio_stream::StreamExt;
-use tokio_util::{
-    codec::{FramedRead, LinesCodec},
-    io::StreamReader,
+
+use crate::ai::{
+    provider::{Provider, ProviderError, CompletionResponse, MessageStream},
+    types::{Message, MessageRole, Usage, ToolCall},
 };
 
-pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-5";
-pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
-    ("gpt-5", 128_000),
-    // ("gpt-4o-mini", 128_000),
-    // ("gpt-4.1", 128_000),
-    // ("gpt-4.1-mini", 128_000),
-    // ("o1", 200_000),
-    // ("o3", 200_000),
-    // ("gpt-3.5-turbo", 16_385),
-    // ("gpt-4-turbo", 128_000),
-    // ("o4-mini", 128_000),
-];
-
-pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
-
-#[derive(Debug, serde::Serialize)]
-pub struct OpenAiProvider {
-    #[serde(skip)]
+pub struct OpenAIProvider {
     client: Client,
-    host: String,
-    base_path: String,
-    organization: Option<String>,
-    project: Option<String>,
-    model: ModelConfig,
-    custom_headers: Option<HashMap<String, String>>,
+    model: String,
 }
 
-impl_provider_default!(OpenAiProvider);
-
-impl OpenAiProvider {
-    pub fn with_api_key(model_name: &str, api_key: String) -> Result<Self> {
-        let model = ModelConfig::new(model_name)?;
-
-        let host = "https://api.openai.com".to_string();
-        let base_path = "v1/chat/completions".to_string();
-        let timeout_secs = 600;
-
+impl OpenAIProvider {
+    pub fn new(model: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
+        let api_key = api_key.into();
         headers.insert(
             reqwest::header::AUTHORIZATION,
             reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))?,
@@ -83,297 +32,304 @@ impl OpenAiProvider {
         );
 
         let client = Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
+            .timeout(Duration::from_secs(300))
             .default_headers(headers)
             .build()?;
 
         Ok(Self {
             client,
-            host,
-            base_path,
-            organization: None,
-            project: None,
-            model,
-            custom_headers: None,
+            model: model.into(),
         })
     }
 
-    pub fn from_env(model: ModelConfig) -> Result<Self> {
-        let config = goose::config::Config::global();
-        let api_key: String = config.get_secret("OPENAI_API_KEY")?;
-        let host: String = config
-            .get_param("OPENAI_HOST")
-            .unwrap_or_else(|_| "https://api.openai.com".to_string());
-        let base_path: String = config
-            .get_param("OPENAI_BASE_PATH")
-            .unwrap_or_else(|_| "v1/chat/completions".to_string());
-        let organization: Option<String> = config.get_param("OPENAI_ORGANIZATION").ok();
-        let project: Option<String> = config.get_param("OPENAI_PROJECT").ok();
-        let custom_headers: Option<HashMap<String, String>> = config
-            .get_secret("OPENAI_CUSTOM_HEADERS")
-            .or_else(|_| config.get_param("OPENAI_CUSTOM_HEADERS"))
-            .ok()
-            .map(parse_custom_headers);
-        let timeout_secs: u64 = config.get_param("OPENAI_TIMEOUT").unwrap_or(600);
+    fn create_request_payload(
+        &self,
+        system_prompt: &str,
+        messages: &[Message],
+        tools: Option<&[rmcp::model::Tool]>,
+        stream: bool,
+    ) -> Value {
+        let mut api_messages = vec![json!({
+            "role": "system",
+            "content": system_prompt
+        })];
 
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))?,
-        );
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            reqwest::header::HeaderValue::from_static("application/json"),
-        );
+        for msg in messages {
+            let mut api_msg = json!({
+                "role": match msg.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user", 
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::Tool => "tool",
+                }
+            });
 
-        if let Some(org) = &organization {
-            headers.insert(
-                reqwest::header::HeaderName::from_static("openai-organization"),
-                reqwest::header::HeaderValue::from_str(org)?,
-            );
+            if let Some(content) = &msg.content {
+                api_msg["content"] = json!(content);
+            }
+
+            if let Some(tool_calls) = &msg.tool_calls {
+                api_msg["tool_calls"] = json!(tool_calls);
+            }
+
+            if let Some(tool_call_id) = &msg.tool_call_id {
+                api_msg["tool_call_id"] = json!(tool_call_id);
+            }
+
+            api_messages.push(api_msg);
         }
 
-        if let Some(project) = &project {
-            headers.insert(
-                reqwest::header::HeaderName::from_static("openai-project"),
-                reqwest::header::HeaderValue::from_str(project)?,
-            );
-        }
+        let mut payload = json!({
+            "model": self.model,
+            "messages": api_messages,
+            "stream": stream,
+        });
 
-        if let Some(custom) = &custom_headers {
-            for (key, value) in custom {
-                let header_name = reqwest::header::HeaderName::from_bytes(key.as_bytes())?;
-                let header_value = reqwest::header::HeaderValue::from_str(value)?;
-                headers.insert(header_name, header_value);
+        if let Some(tools) = tools {
+            if !tools.is_empty() {
+                let openai_tools: Vec<Value> = tools.iter().map(|tool| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description.as_deref().unwrap_or(""),
+                            "parameters": serde_json::Value::Object(tool.input_schema.as_ref().clone())
+                        }
+                    })
+                }).collect();
+                payload["tools"] = json!(openai_tools);
+                payload["tool_choice"] = json!("auto");
             }
         }
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
-            .default_headers(headers)
-            .build()?;
-
-        Ok(Self {
-            client,
-            host,
-            base_path,
-            organization,
-            project,
-            model,
-            custom_headers,
-        })
+        payload
     }
 
-    async fn post(&self, payload: &Value) -> Result<Value, ProviderError> {
-        let url = format!("{}/{}", self.host, self.base_path);
+    fn parse_response(&self, response: &Value) -> Result<CompletionResponse, ProviderError> {
+        let choices = response
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| ProviderError::InvalidRequest("No choices in response".to_string()))?;
+
+        let choice = choices
+            .first()
+            .ok_or_else(|| ProviderError::InvalidRequest("Empty choices array".to_string()))?;
+
+        let api_message = choice
+            .get("message")
+            .ok_or_else(|| ProviderError::InvalidRequest("No message in choice".to_string()))?;
+
+        let content = api_message.get("content").and_then(|c| c.as_str()).map(String::from);
+        let tool_calls = api_message.get("tool_calls").and_then(|tc| {
+            tc.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|call| {
+                        let id = call.get("id")?.as_str()?.to_string();
+                        let tool_type = call.get("type")?.as_str()?.to_string();
+                        let function = call.get("function")?;
+                        let name = function.get("name")?.as_str()?.to_string();
+                        let arguments = function.get("arguments")?.as_str()?.to_string();
+
+                        Some(ToolCall {
+                            id,
+                            tool_type,
+                            function: crate::ai::types::FunctionCall { name, arguments },
+                        })
+                    })
+                    .collect()
+            })
+        });
+
+        let message = if let Some(tool_calls) = tool_calls {
+            Message::assistant_with_tools(content, tool_calls)
+        } else {
+            Message::assistant(content.unwrap_or_default())
+        };
+
+        let usage = response
+            .get("usage")
+            .map(|u| Usage {
+                prompt_tokens: u.get("prompt_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+                completion_tokens: u.get("completion_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+                total_tokens: u.get("total_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+            })
+            .unwrap_or_default();
+
+        Ok(CompletionResponse { message, usage })
+    }
+}
+
+#[async_trait]
+impl Provider for OpenAIProvider {
+    async fn complete(
+        &self,
+        system_prompt: &str,
+        messages: &[Message],
+        tools: Option<&[rmcp::model::Tool]>,
+    ) -> Result<CompletionResponse, ProviderError> {
+        let payload = self.create_request_payload(system_prompt, messages, tools, false);
+
         let response = self
             .client
-            .post(&url)
-            .json(payload)
+            .post("https://api.openai.com/v1/chat/completions")
+            .json(&payload)
             .send()
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
-        handle_response_openai_compat(response).await
-    }
-
-    async fn get(&self, path: &str) -> Result<Response, ProviderError> {
-        let url = format!("{}/{}", self.host, path);
-        self.client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))
-    }
-
-    async fn post_response(&self, path: &str, payload: &Value) -> Result<Response, ProviderError> {
-        let url = format!("{}/{}", self.host, path);
-        self.client
-            .post(&url)
-            .json(payload)
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))
-    }
-}
-
-#[async_trait]
-impl Provider for OpenAiProvider {
-    fn metadata() -> ProviderMetadata {
-        let models = OPEN_AI_KNOWN_MODELS
-            .iter()
-            .map(|(name, limit)| ModelInfo::new(*name, *limit))
-            .collect();
-        ProviderMetadata::with_models(
-            "openai",
-            "OpenAI",
-            "GPT-4 and other OpenAI models, including OpenAI compatible ones",
-            OPEN_AI_DEFAULT_MODEL,
-            models,
-            OPEN_AI_DOC_URL,
-            vec![
-                ConfigKey::new("OPENAI_API_KEY", true, true, None),
-                ConfigKey::new("OPENAI_HOST", true, false, Some("https://api.openai.com")),
-                ConfigKey::new("OPENAI_BASE_PATH", true, false, Some("v1/chat/completions")),
-                ConfigKey::new("OPENAI_ORGANIZATION", false, false, None),
-                ConfigKey::new("OPENAI_PROJECT", false, false, None),
-                ConfigKey::new("OPENAI_CUSTOM_HEADERS", false, true, None),
-                ConfigKey::new("OPENAI_TIMEOUT", false, false, Some("600")),
-            ],
-        )
-    }
-
-    fn get_model_config(&self) -> ModelConfig {
-        self.model.clone()
-    }
-
-    #[tracing::instrument(
-        skip(self, system, messages, tools),
-        fields(model_config, input, output, input_tokens, output_tokens, total_tokens)
-    )]
-    async fn complete(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Tool],
-    ) -> Result<(Message, ProviderUsage), ProviderError> {
-        let payload = create_request(&self.model, system, messages, tools, &ImageFormat::OpenAi)?;
-
-        let json_response = self.post(&payload).await?;
-
-        let message = response_to_message(&json_response)?;
-        let usage = json_response
-            .get("usage")
-            .map(get_usage)
-            .unwrap_or_else(|| {
-                tracing::debug!("Failed to get usage data");
-                Usage::default()
-            });
-        let model = get_model(&json_response);
-        emit_debug_trace(&self.model, &payload, &json_response, &usage);
-        Ok((message, ProviderUsage::new(model, usage)))
-    }
-
-    async fn fetch_supported_models(&self) -> Result<Option<Vec<String>>, ProviderError> {
-        let models_path = self.base_path.replace("v1/chat/completions", "v1/models");
-        let response = self.get(&models_path).await?;
-        let json = handle_response_openai_compat(response).await?;
-        if let Some(err_obj) = json.get("error") {
-            let msg = err_obj
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            return Err(ProviderError::Authentication(msg.to_string()));
-        }
-
-        let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
-            ProviderError::UsageError("Missing data field in JSON response".into())
-        })?;
-        let mut models: Vec<String> = data
-            .iter()
-            .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
-            .collect();
-        models.sort();
-        Ok(Some(models))
-    }
-
-    fn supports_embeddings(&self) -> bool {
-        true
-    }
-
-    async fn create_embeddings(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, ProviderError> {
-        EmbeddingCapable::create_embeddings(self, texts)
-            .await
-            .map_err(|e| ProviderError::ExecutionError(e.to_string()))
-    }
-
-    fn supports_streaming(&self) -> bool {
-        // TODO actually it does support streaming, but would need to verify org first.
-        false
-    }
-
-    async fn stream(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
-        let mut payload =
-            create_request(&self.model, system, messages, tools, &ImageFormat::OpenAi)?;
-        payload["stream"] = serde_json::Value::Bool(true);
-        payload["stream_options"] = json!({
-            "include_usage": true,
-        });
-
-        let response = self.post_response(&self.base_path, &payload).await?;
-        let response = handle_status_openai_compat(response).await?;
-
-        let stream = response.bytes_stream().map_err(io::Error::other);
-
-        let model_config = self.model.clone();
-
-        Ok(Box::pin(try_stream! {
-            let stream_reader = StreamReader::new(stream);
-            let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
-
-            let message_stream = response_to_streaming_message(framed);
-            pin!(message_stream);
-            while let Some(message) = message_stream.next().await {
-                let (message, usage) = message.map_err(|e| ProviderError::RequestFailed(format!("Stream decode error: {}", e)))?;
-                emit_debug_trace(&model_config, &payload, &message, &usage.as_ref().map(|f| f.usage).unwrap_or_default());
-                yield (message, usage);
-            }
-        }))
-    }
-}
-
-fn parse_custom_headers(s: String) -> HashMap<String, String> {
-    s.split(',')
-        .filter_map(|header| {
-            let mut parts = header.splitn(2, '=');
-            let key = parts.next().map(|s| s.trim().to_string())?;
-            let value = parts.next().map(|s| s.trim().to_string())?;
-            Some((key, value))
-        })
-        .collect()
-}
-
-#[async_trait]
-impl EmbeddingCapable for OpenAiProvider {
-    async fn create_embeddings(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
-        if texts.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let embedding_model = std::env::var("GOOSE_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "text-embedding-3-small".to_string());
-
-        let request = EmbeddingRequest {
-            input: texts,
-            model: embedding_model,
-        };
-
-        let response = self
-            .post_response("v1/embeddings", &serde_json::to_value(request)?)
-            .await?;
-
-        if response.status() != StatusCode::OK {
+        if !response.status().is_success() {
+            let status = response.status();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("Embedding API error: {}", error_text));
+            return Err(ProviderError::RequestFailed(format!(
+                "HTTP {}: {}",
+                status,
+                error_text
+            )));
         }
 
-        let embedding_response: EmbeddingResponse = response
+        let json_response: Value = response
             .json()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
+            .map_err(|e| ProviderError::InvalidRequest(e.to_string()))?;
 
-        Ok(embedding_response
-            .data
-            .into_iter()
-            .map(|d| d.embedding)
-            .collect())
+        self.parse_response(&json_response)
+    }
+
+    async fn stream(
+        &self,
+        system_prompt: &str,
+        messages: &[Message],
+        tools: Option<&[rmcp::model::Tool]>,
+    ) -> Result<MessageStream, ProviderError> {
+        let payload = self.create_request_payload(system_prompt, messages, tools, true);
+
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/chat/completions")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ProviderError::RequestFailed(format!(
+                "HTTP {}: {}",
+                status,
+                error_text
+            )));
+        }
+
+        let stream = response.bytes_stream().map_err(std::io::Error::other);
+        let stream_reader = StreamReader::new(stream);
+        let mut lines = FramedRead::new(stream_reader, LinesCodec::new());
+
+        Ok(Box::pin(try_stream! {
+            let mut content_buffer = String::new();
+            let mut tool_calls_buffer: Vec<ToolCall> = Vec::new();
+
+            while let Some(line) = lines.next().await {
+                let line = line.map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+                
+                if line.is_empty() || !line.starts_with("data: ") {
+                    continue;
+                }
+
+                let data = &line[6..];
+                if data == "[DONE]" {
+                    break;
+                }
+
+                let chunk: Value = serde_json::from_str(data)
+                    .map_err(|e| ProviderError::InvalidRequest(e.to_string()))?;
+
+                if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
+                    for choice in choices {
+                        if let Some(delta) = choice.get("delta") {
+                            if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                content_buffer.push_str(content);
+                            }
+
+                            if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
+                                for (i, tool_call) in tool_calls.iter().enumerate() {
+                                    while tool_calls_buffer.len() <= i {
+                                        tool_calls_buffer.push(ToolCall {
+                                            id: String::new(),
+                                            tool_type: "function".to_string(),
+                                            function: crate::ai::types::FunctionCall {
+                                                name: String::new(),
+                                                arguments: String::new(),
+                                            },
+                                        });
+                                    }
+
+                                    if let Some(id) = tool_call.get("id").and_then(|i| i.as_str()) {
+                                        tool_calls_buffer[i].id = id.to_string();
+                                    }
+
+                                    if let Some(function) = tool_call.get("function") {
+                                        if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
+                                            tool_calls_buffer[i].function.name = name.to_string();
+                                        }
+                                        if let Some(args) = function.get("arguments").and_then(|a| a.as_str()) {
+                                            tool_calls_buffer[i].function.arguments.push_str(args);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if choice.get("finish_reason").is_some() {
+                            let message = if !tool_calls_buffer.is_empty() {
+                                Message::assistant_with_tools(
+                                    if content_buffer.is_empty() { None } else { Some(content_buffer.clone()) },
+                                    tool_calls_buffer.clone()
+                                )
+                            } else {
+                                Message::assistant(content_buffer.clone())
+                            };
+
+                            let usage = chunk.get("usage").map(|u| Usage {
+                                prompt_tokens: u.get("prompt_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+                                completion_tokens: u.get("completion_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+                                total_tokens: u.get("total_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as u32,
+                            }).unwrap_or_default();
+
+                            yield CompletionResponse { message, usage };
+                            return;
+                        }
+                    }
+                }
+            }
+
+            let final_message = if !tool_calls_buffer.is_empty() {
+                Message::assistant_with_tools(
+                    if content_buffer.is_empty() { None } else { Some(content_buffer) },
+                    tool_calls_buffer
+                )
+            } else {
+                Message::assistant(content_buffer)
+            };
+
+            yield CompletionResponse { 
+                message: final_message, 
+                usage: Usage::default() 
+            };
+        }))
+    }
+
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
     }
 }

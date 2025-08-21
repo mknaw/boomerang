@@ -19,6 +19,7 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; [
+            openssl
             protobuf
 
             (rust-bin.stable.latest.minimal.override {

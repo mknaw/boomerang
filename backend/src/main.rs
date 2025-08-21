@@ -41,12 +41,6 @@ async fn get_schedules(
     _rqctx: RequestContext<ApiState>,
 ) -> Result<HttpResponseOk<Vec<Schedule>>, HttpError> {
     // TODO: Get config from request context or application state
-    let config = Config::load()
-        .map_err(|e| HttpError::for_internal_error(format!("Config load error: {}", e)))?;
-
-    // Call the AI session establishment function (PoC code moved to ai/session.rs)
-    establish_chat_session(&config.ai).await;
-
     let dummy_schedules = vec![
         Schedule {
             id: Uuid::new_v4(),
@@ -99,6 +93,8 @@ async fn create_schedule(
 async fn main() -> Result<(), String> {
     // Load configuration first
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
+    // Call the AI session establishment function (PoC code moved to ai/session.rs)
+    let _ = establish_chat_session(&config.ai).await;
 
     let mut api = ApiDescription::new();
     api.register(get_schedules).unwrap();

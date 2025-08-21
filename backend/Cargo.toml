@@ -4,24 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+config = "0.14"
 dropshot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
-goose = { git = "https://github.com/block/goose", package = "goose" }
 tokio = { version = "1.0", features = ["full"] }
 schemars = { version = "0.8", features = ["uuid1", "chrono"] }
-slog = "2.7"
-# Pin chrono to avoid conflict with arrow-arith
 chrono = "=0.4.39"
-# Dependencies matching goose versions for direct use
 anyhow = "1.0.99"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 futures = "0.3.31"
 reqwest = { version = "0.12.23", features = ["json", "stream"] }
+rmcp = "0.5.0"
 serde_json = "1.0.142"
 tokio-stream = "0.1.17"
 tokio-util = { version = "0.7.16", features = ["io"] }
 tracing = "0.1.41"
-rmcp = "0.5.0"
-config = "0.14"
