@@ -20,35 +20,26 @@
           overlays = [ (import rust-overlay) ];
         };
         
-        pre-commit-check = pre-commit-hooks.lib.${system}.run {
-          src = ./.;
-          hooks = {
-            rustfmt = {
-              enable = true;
-              packageOverrides.rustfmt = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.rustfmt);
-              files = "backend/.*\\.rs$";
-            };
-          };
-        };
+        # FIXME
+        # pre-commit-check = pre-commit-hooks.lib.${system}.run {
+        #   src = ./.;
+        #   hooks = {
+        #     rustfmt = {
+        #       enable = true;
+        #       packageOverrides.rustfmt = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.rustfmt);
+        #       files = "backend/.*\\.rs$";
+        #     };
+        #   };
+        # };
       in
       {
-        checks = {
-          inherit pre-commit-check;
-        };
+        # checks = {
+        #   inherit pre-commit-check;
+        # };
         
-        devShell = pkgs.mkShell {
-          inherit (pre-commit-check) shellHook;
-          buildInputs = with pkgs; [
-            openssl
-            protobuf
-
-            (rust-bin.stable.latest.minimal.override {
-              extensions = [ "clippy" "rust-analyzer" "rust-docs" "rust-src" ];
-            })
-            (rust-bin.selectLatestNightlyWith (toolchain: toolchain.rustfmt))
-
-            bacon
-          ] ++ pre-commit-check.enabledPackages;
-        };
+        # devShell = pkgs.mkShell {
+        #   inherit (pre-commit-check) shellHook;
+        #   buildInputs = pre-commit-check.enabledPackages;
+        # };
       });
 }

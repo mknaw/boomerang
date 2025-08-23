@@ -2,16 +2,21 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::{debug, trace};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{
-    ai::{
-        provider::{CompletionResponse, Provider, ProviderError},
-        providers::openai::OpenAIProvider,
-        types::{Message, ToolSpec},
-    },
-    config::AIConfig,
-    tools::web_search::WebSearchTool,
+mod ai;
+mod config;
+mod tools;
+
+use ai::{
+    provider::{CompletionResponse, Provider, ProviderError},
+    providers::openai::OpenAIProvider,
+    types::{Message, ToolSpec},
 };
+use config::{AIConfig, Config, ToolConfig};
+use tools::web_search::WebSearchTool;
+
+use crate::ai::session::establish_chat_session;
 
 pub struct Session {
     provider: Arc<dyn Provider>,
@@ -64,7 +69,10 @@ impl Session {
         >,
     > {
         Box::pin(async move {
-            debug!("Starting AI completion with {} messages", self.messages.len());
+            debug!(
+                "Starting AI completion with {} messages",
+                self.messages.len()
+            );
             trace!("System prompt: {}", self.system_prompt);
             trace!("Messages: {:?}", self.messages);
 
@@ -80,7 +88,10 @@ impl Session {
             };
 
             if !tools.is_empty() {
-                debug!("Available tools: {:?}", tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+                debug!(
+                    "Available tools: {:?}",
+                    tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                );
             }
 
             debug!("Calling AI provider for completion");
@@ -90,7 +101,7 @@ impl Session {
                 .await?;
 
             debug!("Received AI response with usage: {:?}", response.usage);
-            
+
             if let Some(content) = &response.message.content {
                 debug!("AI response content: {:.200}...", content);
             }
@@ -98,8 +109,17 @@ impl Session {
             if let Some(tool_calls) = &response.message.tool_calls {
                 debug!("AI requested {} tool calls", tool_calls.len());
                 for (i, tool_call) in tool_calls.iter().enumerate() {
-                    debug!("Tool call {}: {} with id {}", i + 1, tool_call.function.name, tool_call.id);
-                    trace!("Tool call {} arguments: {}", i + 1, tool_call.function.arguments);
+                    debug!(
+                        "Tool call {}: {} with id {}",
+                        i + 1,
+                        tool_call.function.name,
+                        tool_call.id
+                    );
+                    trace!(
+                        "Tool call {} arguments: {}",
+                        i + 1,
+                        tool_call.function.arguments
+                    );
                 }
             }
 
@@ -107,21 +127,34 @@ impl Session {
 
             if let Some(tool_calls) = &response.message.tool_calls {
                 for (i, tool_call) in tool_calls.iter().enumerate() {
-                    debug!("Executing tool call {} of {}: {}", i + 1, tool_calls.len(), tool_call.function.name);
-                    
+                    debug!(
+                        "Executing tool call {} of {}: {}",
+                        i + 1,
+                        tool_calls.len(),
+                        tool_call.function.name
+                    );
+
                     if let Some(tool_spec) = self
                         .tool_specs
                         .iter()
                         .find(|spec| spec.tool.name == tool_call.function.name)
                     {
-                        debug!("Found tool spec for {}, executing...", tool_call.function.name);
+                        debug!(
+                            "Found tool spec for {}, executing...",
+                            tool_call.function.name
+                        );
                         match (tool_spec.executor)(
                             &tool_call.function.name,
                             &tool_call.function.arguments,
-                        ).await {
+                        )
+                        .await
+                        {
                             Ok(result) => {
-                                debug!("Tool {} executed successfully, result length: {} chars", 
-                                       tool_call.function.name, result.len());
+                                debug!(
+                                    "Tool {} executed successfully, result length: {} chars",
+                                    tool_call.function.name,
+                                    result.len()
+                                );
                                 trace!("Tool {} result: {}", tool_call.function.name, result);
                                 let tool_result = Message::tool_result(&tool_call.id, result);
                                 self.messages.push(tool_result);
@@ -178,33 +211,20 @@ impl Session {
     }
 }
 
-pub async fn establish_chat_session(
-    ai_config: &AIConfig,
-    tool_config: &crate::config::ToolConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Establishing chat session with AI provider");
-    return Ok(());
-    let provider = Arc::new(OpenAIProvider::new("gpt-5", &ai_config.openai_api_key)?);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "agent=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
-    // let search_tool = Arc::new(WebSearchTool::new(tool_config.tavily_api_key.clone()));
-    // let web_search_tool_spec = search_tool.to_tool_spec();
+    let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
 
-    let mut session = Session::new(provider)
-        .with_system_prompt("You are a helpful assistant.");
-        // .with_system_prompt("You are a helpful assistant with access to web search.");
-        // .with_tools(vec![web_search_tool_spec]);
-
-    session.add_user_message("What is the difference between south and north indian food?");
-
-    println!("🤖 AI Response:");
-    let response = session.complete().await?;
-
-    if let Some(content) = &response.message.content {
-        println!("📤 Response: {}", content);
-    }
-
-    println!("📊 Usage: {:?}", response.usage);
-    println!("✅ Session completed");
+    establish_chat_session(&config).await?;
 
     Ok(())
 }
+

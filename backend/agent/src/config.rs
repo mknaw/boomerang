@@ -2,15 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub server: ServerConfig,
     pub ai: AIConfig,
     pub tools: ToolConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,8 +26,6 @@ impl Config {
     /// Environment variables:
     /// - ENV=prod (loads config/prod.toml)
     /// - ENV=dev (loads config/dev.toml) [default]
-    /// - BOOMERANG_SERVER__HOST=0.0.0.0
-    /// - BOOMERANG_SERVER__PORT=8080
     /// - BOOMERANG_AI__OPENAI_API_KEY=sk-...
     /// - BOOMERANG_TOOLS__TAVILY_API_KEY=tvly-...
     pub fn load() -> Result<Self, config::ConfigError> {

@@ -1,4 +1,3 @@
-use boomerang::{ai::session::establish_chat_session, config::Config};
 use chrono::{DateTime, Utc};
 use dropshot::{
     ApiDescription, ConfigDropshot, ConfigLogging, HttpError, HttpResponseCreated, HttpResponseOk,
@@ -8,6 +7,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+mod config;
+use config::Config;
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 struct Schedule {
@@ -41,7 +43,6 @@ type ApiState = ();
 async fn get_schedules(
     _rqctx: RequestContext<ApiState>,
 ) -> Result<HttpResponseOk<Vec<Schedule>>, HttpError> {
-    // TODO: Get config from request context or application state
     let dummy_schedules = vec![
         Schedule {
             id: Uuid::new_v4(),
@@ -92,19 +93,15 @@ async fn create_schedule(
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    // Initialize tracing subscriber for debug logging
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "boomerang=debug".into()),
+                .unwrap_or_else(|_| "server=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Load configuration first
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
-    // Call the AI session establishment function (PoC code moved to ai/session.rs)
-    let _ = establish_chat_session(&config.ai, &config.tools).await;
 
     let mut api = ApiDescription::new();
     api.register(get_schedules).unwrap();
@@ -122,7 +119,7 @@ async fn main() -> Result<(), String> {
     let log_config = ConfigLogging::StderrTerminal {
         level: dropshot::ConfigLoggingLevel::Info,
     };
-    let logger = log_config.to_logger("boomerang").unwrap();
+    let logger = log_config.to_logger("server").unwrap();
 
     let server = dropshot::HttpServerStarter::new(&dropshot_config, api, (), &logger)
         .map_err(|error| format!("failed to create server: {}", error))?

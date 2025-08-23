@@ -15,12 +15,21 @@
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
+        # Get a nightly toolchain for cargo-udeps
+        rust-nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal);
+
+        # Create a wrapper for cargo-udeps that uses nightly
+        cargo-udeps-wrapped = pkgs.writeShellScriptBin "cargo-udeps" ''
+          export RUSTC="${rust-nightly}/bin/rustc"
+          export CARGO="${rust-nightly}/bin/cargo"
+          exec "${pkgs.cargo-udeps}/bin/cargo-udeps" "$@"
+        '';
       in
       {
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; [
-            openssl
             protobuf
+            cargo-udeps-wrapped
 
             (rust-bin.stable.latest.minimal.override {
               extensions = [ "clippy" "rust-analyzer" "rust-docs" "rust-src" ];

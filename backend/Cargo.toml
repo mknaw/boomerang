@@ -1,24 +1,27 @@
-[package]
-name = "boomerang"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["server", "agent"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 config = "0.14"
-dropshot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0.99"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0.142"
+
+# Server-specific dependencies
+dropshot = "0.12"
 schemars = { version = "0.8", features = ["uuid1", "chrono"] }
 chrono = "=0.4.39"
-anyhow = "1.0.99"
+
+# Agent-specific dependencies
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 futures = "0.3.31"
 reqwest = { version = "0.12.23", features = ["json", "stream"] }
 rmcp = "0.5.0"
-serde_json = "1.0.142"
 tokio-stream = "0.1.17"
 tokio-util = { version = "0.7.16", features = ["io"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
