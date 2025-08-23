@@ -1,0 +1,76 @@
+/* CSS Reset and base styles for iOS PWA */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Prevent iOS Safari bounce */
+  position: fixed;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* iOS specific fixes */
+body {
+  /* Prevent zoom on input focus */
+  -webkit-text-size-adjust: 100%;
+  /* Prevent callout menu on long press */
+  -webkit-touch-callout: none;
+  /* Prevent selection highlighting */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection for specific elements */
+p, span, div {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* iOS button styling reset */
+button {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: none;
+  font: inherit;
+  outline: none;
+}
+
+/* iOS input styling */
+input, textarea, select {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  font: inherit;
+}
+
+/* Prevent iOS from changing link styles */
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS scroll momentum */
+.scrollable {
+  -webkit-overflow-scrolling: touch;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}

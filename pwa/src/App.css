@@ -1,0 +1,271 @@
+/* iOS PWA optimized styles */
+.App {
+  text-align: center;
+  background-color: #f5f5f7;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* iOS safe area handling */
+@supports (padding: max(0px)) {
+  .App {
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+}
+
+.App-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px 20px;
+  color: white;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+}
+
+.App-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.App-header p {
+  margin: 0;
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.standalone-indicator {
+  margin-top: 15px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 8px 16px;
+  display: inline-block;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.App-main {
+  flex: 1;
+  padding: 30px 20px;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.install-prompt {
+  background: #fff;
+  border: 2px solid #007AFF;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 20px rgba(0, 122, 255, 0.1);
+}
+
+.install-prompt h3 {
+  color: #007AFF;
+  margin: 0 0 16px 0;
+  font-size: 1.3rem;
+}
+
+.install-prompt ol {
+  text-align: left;
+  padding-left: 20px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.notification-section,
+.schedule-section {
+  background: white;
+  border-radius: 16px;
+  padding: 30px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  text-align: left;
+}
+
+.notification-section h2,
+.schedule-section h2 {
+  margin: 0 0 24px 0;
+  color: #1d1d1f;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.status-info {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.status-info p {
+  margin: 8px 0;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primary-button {
+  background: #007AFF;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+}
+
+.primary-button:hover {
+  background: #0056CC;
+  transform: translateY(-1px);
+}
+
+.primary-button:active {
+  transform: translateY(0);
+}
+
+.secondary-button {
+  background: #f1f3f4;
+  color: #333;
+  border: 2px solid #e1e5e9;
+  border-radius: 12px;
+  padding: 14px 22px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.secondary-button:hover {
+  background: #e8eaed;
+  border-color: #d2d7db;
+}
+
+.placeholder-content {
+  margin-top: 20px;
+}
+
+.schedule-item {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border-left: 4px solid #34C759;
+}
+
+.schedule-item h3 {
+  margin: 0 0 8px 0;
+  color: #1d1d1f;
+  font-size: 1.1rem;
+}
+
+.schedule-item p {
+  margin: 0 0 12px 0;
+  color: #666;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.status {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status.active {
+  background: #d1ffbd;
+  color: #2d7d32;
+}
+
+/* iOS specific touch improvements */
+@media (hover: none) {
+  .primary-button:hover,
+  .secondary-button:hover {
+    transform: none;
+    background: inherit;
+    border-color: inherit;
+  }
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+  .App-header {
+    padding: 30px 15px;
+  }
+  
+  .App-header h1 {
+    font-size: 2rem;
+  }
+  
+  .App-main {
+    padding: 20px 15px;
+  }
+  
+  .notification-section,
+  .schedule-section {
+    padding: 20px;
+  }
+  
+  .button-group {
+    flex-direction: column;
+  }
+  
+  .primary-button,
+  .secondary-button {
+    width: 100%;
+  }
+}
+
+/* Dark mode support for iOS */
+@media (prefers-color-scheme: dark) {
+  .App {
+    background-color: #000;
+    color: #fff;
+  }
+  
+  .notification-section,
+  .schedule-section {
+    background: #1c1c1e;
+    color: #fff;
+  }
+  
+  .status-info {
+    background: #2c2c2e;
+  }
+  
+  .status-info p {
+    color: #e5e5e7;
+  }
+  
+  .schedule-item {
+    background: #2c2c2e;
+  }
+  
+  .schedule-item h3 {
+    color: #fff;
+  }
+  
+  .schedule-item p {
+    color: #a1a1a6;
+  }
+}

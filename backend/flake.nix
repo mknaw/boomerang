@@ -15,6 +15,7 @@
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
+
         # Get a nightly toolchain for cargo-udeps
         rust-nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal);
 
@@ -42,3 +43,4 @@
         };
       });
 }
+

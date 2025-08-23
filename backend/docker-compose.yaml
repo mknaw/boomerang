@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  restate:
+    image: docker.restate.dev/restatedev/restate:latest
+    container_name: restate-server
+    ports:
+      - "8080:8080"   # Ingress endpoint
+      - "9070:9070"   # UI
+      - "9071:9071"   # Admin endpoint
+    environment:
+      # Optional: Disable telemetry if you prefer
+      - DO_NOT_TRACK=1
+      # Optional: Set custom base directory for data persistence
+      - RESTATE_BASE_DIR=/restate-data
+    volumes:
+      # Persist Restate data across container restarts
+      - restate_data:/restate-data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9071/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - restate-network
+
+  # Example service container (uncomment and modify as needed)
+  # your-service:
+  #   build: .
+  #   container_name: your-service
+  #   ports:
+  #     - "9080:9080"
+  #   environment:
+  #     - RESTATE_SERVER_URL=http://restate:8080
+  #   depends_on:
+  #     restate:
+  #       condition: service_healthy
+  #   networks:
+  #     - restate-network
+
+volumes:
+  restate_data:
+    driver: local
+
+networks:
+  restate-network:
+    driver: bridge
