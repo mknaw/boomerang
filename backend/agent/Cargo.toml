@@ -15,8 +15,9 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
-restate-sdk = "0.1"
+restate-sdk = "0.6.0"
 rmcp = { workspace = true }
+schemars = "1.0.0"
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tokio-cron-scheduler = { workspace = true }
