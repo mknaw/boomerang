@@ -1,6 +1,8 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, OnceLock};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     pub ai: AIConfig,
     pub tools: ToolConfig,
@@ -8,17 +10,17 @@ pub struct Config {
     pub server: ServerConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AIConfig {
     pub openai_api_key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolConfig {
     pub tavily_api_key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -71,5 +73,21 @@ impl Config {
             .build()?;
 
         cfg.try_deserialize()
+    }
+}
+
+static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+
+impl Config {
+    pub fn global() -> Arc<Config> {
+        CONFIG.get().expect("Config not initialized. Call Config::init() first.").clone()
+    }
+    
+    pub fn init() -> Result<(), config::ConfigError> {
+        let config = Self::load()?;
+        CONFIG.set(Arc::new(config)).map_err(|_| {
+            config::ConfigError::Message("Config already initialized".to_string())
+        })?;
+        Ok(())
     }
 }

@@ -7,7 +7,8 @@ use restate_sdk::prelude::*;
 async fn main() {
     tracing_subscriber::fmt::init();
     
-    let config = Config::load().expect("Failed to load configuration");
+    Config::init().expect("Failed to initialize configuration");
+    let config = Config::global();
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
     
     HttpServer::new(
