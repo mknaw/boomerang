@@ -6,16 +6,16 @@ A tool that enables scheduled LLM tool-calling sessions with iOS notifications. 
 
 ## Architecture
 
+This repository contains the backend components only. The iOS frontend is maintained in a separate repository.
+
 ### Backend
 - **Language**: Rust
 - **Orchestration**: Temporal for reliable scheduled execution
 - **LLM Integration**: Tool-calling LLM sessions
 - **DSL**: Internal scheduling specification language (LLM converts natural language to DSL)
-
-### Frontend
-- **Platform**: iOS (Swift/SwiftUI)
-- **Rationale**: Maximum API access for notifications, background processing, and system integration
-- **Alternative considered**: React Native (faster development, cross-platform) - rejected due to need for deep iOS integration
+- **Components**:
+  - **Server**: Main HTTP API server
+  - **Agent**: LLM tool execution engine
 
 ## Key Features
 - Natural language schedule creation
@@ -24,8 +24,10 @@ A tool that enables scheduled LLM tool-calling sessions with iOS notifications. 
 - Background processing for scheduled tasks
 - Tool discovery and management interface
 
-## Technical Requirements
-- iOS background app refresh
-- Push notifications
-- Network requests for backend communication
-- Persistent storage for schedules and preferences
+## Backend Technical Requirements
+- Rust async runtime (tokio)
+- Temporal workflow orchestration
+- HTTP API endpoints for schedule management
+- LLM provider integration (OpenAI)
+- Configuration management
+- Tool execution framework
