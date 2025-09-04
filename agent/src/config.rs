@@ -9,6 +9,8 @@ pub struct Config {
     pub tools: ToolConfig,
     #[serde(default)]
     pub server: ServerConfig,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -44,6 +46,17 @@ fn default_host() -> String {
 
 fn default_port() -> u16 {
     9080
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct NotificationSettings {
+    pub ntfy_url: Option<String>,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self { ntfy_url: None }
+    }
 }
 
 impl Config {

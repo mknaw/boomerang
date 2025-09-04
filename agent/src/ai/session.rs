@@ -4,14 +4,9 @@ use anyhow::Result;
 use futures::future::join_all;
 use tracing::{debug, trace};
 
-use crate::{
-    ai::{
-        provider::{CompletionResponse, Provider, ProviderError},
-        providers::openai::OpenAIProvider,
-        types::{Message, ToolSpec},
-    },
-    config::Config,
-    tools::web_search::WebSearchTool,
+use crate::ai::{
+    provider::{CompletionResponse, Provider, ProviderError},
+    types::{Message, ToolSpec},
 };
 
 pub struct Session {
@@ -253,30 +248,4 @@ impl Session {
 
         Ok(stream)
     }
-}
-
-pub async fn establish_chat_session(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Establishing chat session with AI provider");
-    let provider = Arc::new(OpenAIProvider::new("gpt-5", &config.ai.openai_api_key)?);
-
-    let search_tool = Arc::new(WebSearchTool::new(config.tools.tavily_api_key.clone()));
-    let web_search_tool_spec = search_tool.to_tool_spec();
-
-    let mut session = Session::new(provider)
-        .with_system_prompt("You are a helpful assistant with access to web search.")
-        .with_tools(vec![web_search_tool_spec]);
-
-    session.add_user_message("How did the $QQQ fare yesterday? What was the biggest market news?");
-
-    println!("🤖 AI Response:");
-    let response = session.complete().await?;
-
-    if let Some(content) = &response.message.content {
-        println!("📤 Response: {}", content);
-    }
-
-    println!("📊 Usage: {:?}", response.usage);
-    println!("✅ Session completed");
-
-    Ok(())
 }

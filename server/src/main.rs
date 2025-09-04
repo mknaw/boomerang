@@ -1,10 +1,15 @@
-use chrono::{DateTime, Utc};
-use dropshot::{
-    ApiDescription, ConfigDropshot, ConfigLogging, HttpError, HttpResponseCreated, HttpResponseOk,
-    RequestContext, TypedBody, endpoint,
+use axum::{
+    Router,
+    extract::Json,
+    http::StatusCode,
+    response::Json as ResponseJson,
+    routing::{get, post},
 };
+use chrono::{DateTime, Utc};
+use http::Method;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
@@ -34,15 +39,7 @@ struct CreateScheduleRequest {
     is_active: Option<bool>,
 }
 
-type ApiState = ();
-
-#[endpoint {
-    method = GET,
-    path = "/schedules",
-}]
-async fn get_schedules(
-    _rqctx: RequestContext<ApiState>,
-) -> Result<HttpResponseOk<Vec<Schedule>>, HttpError> {
+async fn get_schedules() -> ResponseJson<Vec<Schedule>> {
     let dummy_schedules = vec![
         Schedule {
             id: Uuid::new_v4(),
@@ -64,18 +61,12 @@ async fn get_schedules(
         },
     ];
 
-    Ok(HttpResponseOk(dummy_schedules))
+    ResponseJson(dummy_schedules)
 }
 
-#[endpoint {
-    method = POST,
-    path = "/schedules",
-}]
 async fn create_schedule(
-    _rqctx: RequestContext<ApiState>,
-    body: TypedBody<CreateScheduleRequest>,
-) -> Result<HttpResponseCreated<Schedule>, HttpError> {
-    let request = body.into_inner();
+    Json(request): Json<CreateScheduleRequest>,
+) -> (StatusCode, ResponseJson<Schedule>) {
     let now = Utc::now();
 
     let schedule = Schedule {
@@ -88,7 +79,7 @@ async fn create_schedule(
         updated_at: now,
     };
 
-    Ok(HttpResponseCreated(schedule))
+    (StatusCode::CREATED, ResponseJson(schedule))
 }
 
 #[tokio::main]
@@ -103,31 +94,31 @@ async fn main() -> Result<(), String> {
 
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
 
-    let mut api = ApiDescription::new();
-    api.register(get_schedules).unwrap();
-    api.register(create_schedule).unwrap();
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::exact("http://air.local:3000".parse().unwrap()))
+        .allow_methods(AllowMethods::list([
+            Method::GET,
+            Method::POST,
+            Method::OPTIONS,
+        ]))
+        .allow_headers(AllowHeaders::list([http::header::CONTENT_TYPE]));
 
-    let dropshot_config = ConfigDropshot {
-        bind_address: format!("{}:{}", config.server.host, config.server.port)
-            .parse()
-            .map_err(|e| format!("Invalid bind address: {}", e))?,
-        request_body_max_bytes: 1024 * 1024,
-        default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-        log_headers: vec![],
-    };
+    let app = Router::new()
+        .route("/schedules", get(get_schedules))
+        .route("/schedules", post(create_schedule))
+        .layer(cors);
 
-    let log_config = ConfigLogging::StderrTerminal {
-        level: dropshot::ConfigLoggingLevel::Info,
-    };
-    let logger = log_config.to_logger("server").unwrap();
-
-    let server = dropshot::HttpServerStarter::new(&dropshot_config, api, (), &logger)
-        .map_err(|error| format!("failed to create server: {}", error))?
-        .start();
+    let bind_address = format!("{}:{}", config.server.host, config.server.port);
+    let listener = tokio::net::TcpListener::bind(&bind_address)
+        .await
+        .map_err(|e| format!("Failed to bind to {}: {}", bind_address, e))?;
 
     println!(
         "Server running on http://{}:{}",
         config.server.host, config.server.port
     );
-    server.await
+
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("Server error: {}", e))
 }
