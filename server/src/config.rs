@@ -30,7 +30,7 @@ impl Config {
         let cfg = config::Config::builder()
             .add_source(config::File::with_name(&config_file))
             .add_source(
-                config::Environment::with_prefix("BOOMERANG")
+                config::Environment::default()
                     .separator("__")
                     .try_parsing(true),
             )
