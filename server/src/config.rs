@@ -7,6 +7,8 @@ pub struct Config {
     pub server: ServerConfig,
     #[serde(default)]
     pub cors: CorsConfig,
+    pub password: String,
+    pub jwt_secret: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,3 +1,6 @@
 [server]
 host = "127.0.0.1"
 port = 3333
+
+password = "dev-password"
+jwt_secret = "dev-jwt-secret-key-that-should-be-longer-in-production"

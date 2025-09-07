@@ -72,4 +72,4 @@ node_modules/
 
 # temporary folders
 tmp/
-temp/**/.claude/settings.local.json
+**/.claude/settings.local.json

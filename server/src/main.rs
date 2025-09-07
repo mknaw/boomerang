@@ -1,14 +1,13 @@
-use axum::{
-    Router,
-    routing::{get, post},
-};
+use axum::{Router, routing::post};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod auth;
 mod config;
 mod resources;
 
+use auth::login;
 use config::Config;
-use resources::schedule::{create_schedule, get_schedules};
+use resources::schedule;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -23,8 +22,9 @@ async fn main() -> Result<(), String> {
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
 
     let app = Router::new()
-        .route("/schedules", get(get_schedules))
-        .route("/schedules", post(create_schedule))
+        .route("/login", post(login))
+        .nest("/schedules", schedule::routes())
+        .with_state(config.clone())
         .layer(config.cors.to_cors_layer());
 
     let bind_address = format!("{}:{}", config.server.host, config.server.port);

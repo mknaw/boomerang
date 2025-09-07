@@ -1,8 +1,16 @@
-use axum::{extract::Json, http::StatusCode, response::Json as ResponseJson};
+use axum::{
+    Router,
+    extract::Json,
+    http::StatusCode,
+    response::Json as ResponseJson,
+    routing::{get, post},
+};
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::{auth::AuthUser, config::Config};
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct Schedule {
@@ -27,7 +35,7 @@ pub struct CreateScheduleRequest {
     pub is_active: Option<bool>,
 }
 
-pub async fn get_schedules() -> ResponseJson<Vec<Schedule>> {
+pub async fn get_schedules(_user: AuthUser) -> ResponseJson<Vec<Schedule>> {
     let dummy_schedules = vec![
         Schedule {
             id: Uuid::new_v4(),
@@ -53,6 +61,7 @@ pub async fn get_schedules() -> ResponseJson<Vec<Schedule>> {
 }
 
 pub async fn create_schedule(
+    _user: AuthUser,
     Json(request): Json<CreateScheduleRequest>,
 ) -> (StatusCode, ResponseJson<Schedule>) {
     let now = Utc::now();
@@ -68,4 +77,10 @@ pub async fn create_schedule(
     };
 
     (StatusCode::CREATED, ResponseJson(schedule))
+}
+
+pub fn routes() -> Router<Config> {
+    Router::new()
+        .route("/", get(get_schedules))
+        .route("/", post(create_schedule))
 }
