@@ -6,10 +6,8 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
-use http::Method;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
@@ -94,19 +92,10 @@ async fn main() -> Result<(), String> {
 
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
 
-    let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::exact("http://air.local:3000".parse().unwrap()))
-        .allow_methods(AllowMethods::list([
-            Method::GET,
-            Method::POST,
-            Method::OPTIONS,
-        ]))
-        .allow_headers(AllowHeaders::list([http::header::CONTENT_TYPE]));
-
     let app = Router::new()
         .route("/schedules", get(get_schedules))
         .route("/schedules", post(create_schedule))
-        .layer(cors);
+        .layer(config.cors.to_cors_layer());
 
     let bind_address = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&bind_address)
