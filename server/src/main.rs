@@ -1,4 +1,5 @@
 use axum::{Router, routing::post};
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
@@ -20,11 +21,13 @@ async fn main() -> Result<(), String> {
         .init();
 
     let config = Config::load().map_err(|e| format!("Failed to load configuration: {}", e))?;
+    tracing::info!("Loaded configuration: {:?}", config);
 
     let app = Router::new()
         .route("/login", post(login))
         .nest("/schedules", schedule::routes())
         .with_state(config.clone())
+        .layer(TraceLayer::new_for_http())
         .layer(config.cors.to_cors_layer());
 
     let bind_address = format!("{}:{}", config.server.host, config.server.port);

@@ -106,7 +106,8 @@ impl Config {
             .add_source(
                 config::Environment::default()
                     .separator("__")
-                    .try_parsing(true),
+                    .try_parsing(true)
+                    .list_separator(","),
             )
             .build()?;
 
