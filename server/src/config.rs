@@ -68,17 +68,10 @@ impl CorsConfig {
 }
 
 impl Config {
-    /// Load configuration from environment-specific config files and environment variables
-    ///
     /// Loading order:
     /// 1. config/{ENV}.toml where ENV comes from environment variable (defaults to "dev")
-    /// 2. Environment variables with BOOMERANG_ prefix (optional)
-    ///
-    /// Environment variables:
-    /// - ENV=prod (loads config/prod.toml)
-    /// - ENV=dev (loads config/dev.toml) [default]
-    /// - BOOMERANG_SERVER__HOST=0.0.0.0
-    /// - BOOMERANG_SERVER__PORT=8080
+    /// 2. Environment variables
+
     pub fn load() -> Result<Self, config::ConfigError> {
         let env = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
         let config_file = format!("config/{}.toml", env);
@@ -107,7 +100,8 @@ impl Config {
                 config::Environment::default()
                     .separator("__")
                     .try_parsing(true)
-                    .list_separator(","),
+                    .list_separator(",")
+                    .with_list_parse_key("cors.allowed_origins"),
             )
             .build()?;
 
