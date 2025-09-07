@@ -1,6 +1,7 @@
 use http::Method;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
+use tracing::debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -80,10 +81,28 @@ impl Config {
     /// - BOOMERANG_SERVER__PORT=8080
     pub fn load() -> Result<Self, config::ConfigError> {
         let env = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
-        let config_file = format!("config/{}", env);
+        let config_file = format!("config/{}.toml", env);
+        debug!("Loading configuration for environment");
+
+        // Get absolute path for logging
+        let absolute_path = std::env::current_dir()
+            .map(|cwd| cwd.join(&config_file))
+            .unwrap_or_else(|_| std::path::PathBuf::from(&config_file));
+
+        let file_exists = absolute_path.exists();
+
+        debug!(
+            "Looking for config file at: {} (exists: {})",
+            absolute_path.display(),
+            file_exists
+        );
 
         let cfg = config::Config::builder()
-            .add_source(config::File::with_name(&config_file).required(false))
+            .add_source(
+                config::File::with_name(&config_file)
+                    .format(config::FileFormat::Toml)
+                    .required(false),
+            )
             .add_source(
                 config::Environment::default()
                     .separator("__")
@@ -97,9 +116,10 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use axum::{Router, http::Request, routing::get};
     use tower::ServiceExt;
+
+    use super::*;
 
     async fn dummy_handler() -> &'static str {
         "test"
