@@ -61,6 +61,10 @@ impl FromRequestParts<Config> for AuthUser {
         parts: &mut Parts,
         state: &Config,
     ) -> Result<Self, Self::Rejection> {
+        if state.is_debug_mode() && !state.debug.require_auth {
+            return Ok(AuthUser);
+        }
+
         let auth_header = parts
             .headers
             .get("Authorization")

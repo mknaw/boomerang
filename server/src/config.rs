@@ -6,16 +6,30 @@ use tracing::debug;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub server: ServerConfig,
+    // TODO these `default`s are not working as I'd hoped, you still have to provide a bunch of shit.
     #[serde(default)]
     pub cors: CorsConfig,
+    #[serde(default)]
+    pub debug: DebugConfig,
     pub password: String,
     pub jwt_secret: String,
+    pub restate: RestateConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestateConfig {
+    pub server: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugConfig {
+    pub require_auth: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +43,14 @@ impl Default for CorsConfig {
         Self {
             allowed_origins: vec![],
             allow_all_localhost: Some(true),
+        }
+    }
+}
+
+impl Default for DebugConfig {
+    fn default() -> Self {
+        Self {
+            require_auth: false,
         }
     }
 }
@@ -72,6 +94,10 @@ impl Config {
     /// 1. config/{ENV}.toml where ENV comes from environment variable (defaults to "dev")
     /// 2. Environment variables
 
+    pub fn is_debug_mode(&self) -> bool {
+        std::env::var("ENV").unwrap_or_else(|_| "dev".to_string()) == "dev"
+    }
+
     pub fn load() -> Result<Self, config::ConfigError> {
         let env = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
         let config_file = format!("config/{}.toml", env);
@@ -105,7 +131,19 @@ impl Config {
             )
             .build()?;
 
-        cfg.try_deserialize()
+        let mut config: Self = cfg.try_deserialize()?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&mut self) -> Result<(), config::ConfigError> {
+        // Ensure restate server URL has proper scheme
+        if !self.restate.server.starts_with("http://")
+            && !self.restate.server.starts_with("https://")
+        {
+            self.restate.server = format!("http://{}", self.restate.server);
+        }
+        Ok(())
     }
 }
 

@@ -2,5 +2,8 @@ password = "dev-password"
 jwt_secret = "dev-jwt-secret-key-that-should-be-longer-in-production"
 
 [server]
-host = "127.0.0.1"
+host = "localhost"
 port = 3333
+
+[restate]
+server = "localhost:8080"

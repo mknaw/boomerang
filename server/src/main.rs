@@ -8,7 +8,7 @@ mod resources;
 
 use auth::login;
 use config::Config;
-use resources::schedule;
+use resources::{execution, schedule};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -26,6 +26,7 @@ async fn main() -> Result<(), String> {
     let app = Router::new()
         .route("/login", post(login))
         .nest("/schedules", schedule::routes())
+        .nest("/executions", execution::routes())
         .with_state(config.clone())
         .layer(TraceLayer::new_for_http())
         .layer(config.cors.to_cors_layer());

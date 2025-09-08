@@ -30,6 +30,52 @@
           exec "${pkgs.cargo-udeps}/bin/cargo-udeps" "$@"
         '';
 
+        # Restate server package
+        restate-server = pkgs.stdenv.mkDerivation rec {
+          pname = "restate-server";
+          version = "latest";
+
+          src = pkgs.fetchurl {
+            url = "https://restate.gateway.scarf.sh/latest/restate-server-aarch64-apple-darwin.tar.xz";
+            sha256 = "sha256-mvofY1mqRMHy1DmgWgB/QiDr5dQy7OqnWpWV1DqwYfw=";
+          };
+
+          nativeBuildInputs = [ pkgs.installShellFiles ];
+
+          unpackPhase = ''
+            tar -xf $src --strip-components=1
+          '';
+
+          installPhase = ''
+            mkdir -p $out/bin
+            cp restate-server $out/bin/
+            chmod +x $out/bin/restate-server
+          '';
+        };
+
+        # Restate CLI package
+        restate-cli = pkgs.stdenv.mkDerivation rec {
+          pname = "restate";
+          version = "latest";
+
+          src = pkgs.fetchurl {
+            url = "https://restate.gateway.scarf.sh/latest/restate-cli-aarch64-apple-darwin.tar.xz";
+            sha256 = "sha256-BOOVP9FzcsWmRQyIipGYMD1pb+1AhUoXlLX2b1Gsu7Q=";
+          };
+
+          nativeBuildInputs = [ pkgs.installShellFiles ];
+
+          unpackPhase = ''
+            tar -xf $src --strip-components=1
+          '';
+
+          installPhase = ''
+            mkdir -p $out/bin
+            cp restate $out/bin/
+            chmod +x $out/bin/restate
+          '';
+        };
+
         # Git hooks configuration
         pre-commit-check = git-hooks.lib.${system}.run {
           src = ./.;
@@ -44,6 +90,8 @@
           buildInputs = with pkgs; [
             protobuf
             cargo-udeps-wrapped
+            restate-server
+            restate-cli
 
             (rust-bin.stable.latest.minimal.override {
               extensions = [ "clippy" "rust-analyzer" "rust-docs" "rust-src" ];
