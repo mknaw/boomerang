@@ -75,3 +75,4 @@ tmp/
 **/.claude/settings.local.json
 restate-data
 .aider*
+.dmux/

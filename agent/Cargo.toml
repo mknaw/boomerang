@@ -37,5 +37,9 @@ grep-searcher = "0.1"
 grep-matcher = "0.1"
 regex = "1.12.3"
 
+# Postgres client for introspection
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+deadpool-postgres = "0.14"
+
 [dev-dependencies]
 tempfile = "3.0"

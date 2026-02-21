@@ -39,38 +39,27 @@
           exec "${pkgs.cargo-udeps}/bin/cargo-udeps" "$@"
         '';
 
-        # Restate server package
-        restate-server = pkgs.stdenv.mkDerivation {
-          pname = "restate-server";
-          version = "latest";
-
-          src = pkgs.fetchurl {
-            # TODO: you'd want other URLs for other platforms, but this works for now.
-            url = "https://restate.gateway.scarf.sh/latest/restate-server-aarch64-apple-darwin.tar.xz";
-            sha256 = "sha256-mvofY1mqRMHy1DmgWgB/QiDr5dQy7OqnWpWV1DqwYfw=";
+        # Restate CLI package - platform specific
+        restate-cli = let
+          platformInfo = {
+            "aarch64-darwin" = {
+              url = "https://restate.gateway.scarf.sh/latest/restate-cli-aarch64-apple-darwin.tar.xz";
+              sha256 = "sha256-BOOVP9FzcsWmRQyIipGYMD1pb+1AhUoXlLX2b1Gsu7Q=";
+            };
+            "aarch64-linux" = {
+              url = "https://restate.gateway.scarf.sh/latest/restate-cli-aarch64-unknown-linux-musl.tar.xz";
+              sha256 = "sha256-Fq1qKWTDmFU66NqRD3bTazvorZqKwwGWORjwb4rRhp0=";
+            };
           };
-
-          nativeBuildInputs = [ pkgs.installShellFiles ];
-
-          unpackPhase = ''
-            tar -xf $src --strip-components=1
-          '';
-
-          installPhase = ''
-            mkdir -p $out/bin
-            cp restate-server $out/bin/
-            chmod +x $out/bin/restate-server
-          '';
-        };
-
-        # Restate CLI package
-        restate-cli = pkgs.stdenv.mkDerivation {
+          info = platformInfo.${system} or (throw "Unsupported system: ${system}");
+        in
+        pkgs.stdenv.mkDerivation {
           pname = "restate";
           version = "latest";
 
           src = pkgs.fetchurl {
-            url = "https://restate.gateway.scarf.sh/latest/restate-cli-aarch64-apple-darwin.tar.xz";
-            sha256 = "sha256-BOOVP9FzcsWmRQyIipGYMD1pb+1AhUoXlLX2b1Gsu7Q=";
+            url = info.url;
+            sha256 = info.sha256;
           };
 
           nativeBuildInputs = [ pkgs.installShellFiles ];
@@ -111,7 +100,6 @@
             protobuf
             cargo-udeps-wrapped
             cargo-zigbuild
-            restate-server
             restate-cli
             just
 

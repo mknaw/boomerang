@@ -158,18 +158,32 @@ fn default_telegram_bind_address() -> String {
 pub struct RestateConfig {
     #[serde(default = "default_restate_ingress_url")]
     pub ingress_url: String,
+    #[serde(default = "default_restate_introspection_host")]
+    pub introspection_host: String,
+    #[serde(default = "default_restate_introspection_port")]
+    pub introspection_port: u16,
 }
 
 impl Default for RestateConfig {
     fn default() -> Self {
         Self {
             ingress_url: default_restate_ingress_url(),
+            introspection_host: default_restate_introspection_host(),
+            introspection_port: default_restate_introspection_port(),
         }
     }
 }
 
 fn default_restate_ingress_url() -> String {
     "http://localhost:8080".to_string()
+}
+
+fn default_restate_introspection_host() -> String {
+    "localhost".to_string()
+}
+
+fn default_restate_introspection_port() -> u16 {
+    5432
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -252,6 +266,15 @@ impl Default for Config {
             memory: MemoryConfig::default(),
             telemetry: TelemetryConfig::default(),
         }
+    }
+}
+
+impl RestateConfig {
+    pub fn introspection_connection_string(&self) -> String {
+        format!(
+            "host={} port={} user=restate password=restate dbname=restate",
+            self.introspection_host, self.introspection_port
+        )
     }
 }
 

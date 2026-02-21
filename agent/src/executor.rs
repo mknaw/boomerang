@@ -112,6 +112,19 @@ impl AgentExecutor {
                 ));
                 registry.register(schedule);
             }
+
+            // Add introspection tools
+            let conn_string = self.config.restate.introspection_connection_string();
+            match crate::tools::create_introspection_tools(&conn_string) {
+                Ok(tools) => {
+                    for tool in tools {
+                        registry.register(tool);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to initialize introspection tools: {}", e);
+                }
+            }
         }
 
         Ok(AgentConfig::new(

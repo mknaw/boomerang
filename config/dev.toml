@@ -18,6 +18,9 @@ bind_address = "127.0.0.1:9081"
 
 [restate]
 ingress_url = "http://127.0.0.1:8080"
+# Postgres introspection interface (optional - defaults shown below)
+# introspection_host = "localhost"
+# introspection_port = 5432
 
 [memory]
 # Path to store persistent memory (notes, facts, etc.)
