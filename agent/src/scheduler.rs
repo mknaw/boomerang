@@ -3,7 +3,9 @@ use std::time::{Duration, Instant};
 use common::{
     PlatformOrigin, Turn,
     config::Config,
-    restate::{ChatSessionClient, ScheduleArgs, ScheduledSession, ScheduledSessionClient},
+    restate::{
+        ChatSessionClient, CronTaskStatus, ScheduleArgs, ScheduledSession, ScheduledSessionClient,
+    },
 };
 use restate_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -11,15 +13,40 @@ use tracing::{debug, error, info, warn};
 
 use crate::{ai::types::Message, executor::AgentExecutor};
 
+/// Unified state stored for every scheduled task (one-shot and recurring).
+/// Keyed as `"cron_state"` in the virtual object's K/V store.
 #[derive(Serialize, Deserialize, Clone)]
-struct RecurringState {
+struct CronTaskState {
     task: String,
-    interval_seconds: u32,
+    is_recurring: bool,
+    /// None for one-shot tasks.
+    interval_seconds: Option<u32>,
+    /// Restate invocation ID of the next pending `execute()` call.
     next_invocation_id: Option<String>,
+    // Routing fields – needed to send results back to the user.
     chat_key: String,
     platform_type: String,
     external_chat_id: String,
     adapter_key: String,
+    // Inspection / "first-class" fields.
+    created_at: String,
+    last_run_at: Option<String>,
+    next_run_at: Option<String>,
+    run_count: u32,
+}
+
+impl CronTaskState {
+    fn into_status(self) -> CronTaskStatus {
+        CronTaskStatus {
+            task: self.task,
+            is_recurring: self.is_recurring,
+            created_at: self.created_at,
+            last_run_at: self.last_run_at,
+            next_run_at: self.next_run_at,
+            run_count: self.run_count,
+            interval_seconds: self.interval_seconds,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +60,7 @@ struct ScheduleExtraction {
 }
 
 const TASK_COMPLETE_MARKER: &str = "<<<TASK_COMPLETE>>>";
+const STATE_KEY: &str = "cron_state";
 
 pub struct ScheduledSessionImpl;
 
@@ -47,12 +75,11 @@ impl ScheduledSession for ScheduledSessionImpl {
 
         let config = Config::global();
 
-        // Extract timing and task from the request using LLM
+        // Extract timing and task from the request using LLM.
         let extraction = match extract_schedule_info(&args.request, args.recurring, &config).await {
             Ok(ext) => ext,
             Err(e) => {
                 error!("Failed to extract schedule info: {}", e);
-                // Send error back to user
                 let turn = Turn::scheduled_completion(
                     &args.request,
                     &format!("Failed to understand scheduling request: {}", e),
@@ -101,28 +128,36 @@ impl ScheduledSession for ScheduledSessionImpl {
             extraction.delay_seconds, extraction.task, extraction.interval_seconds
         );
 
+        let now = chrono::Utc::now();
+        let next_run_at = now + chrono::Duration::seconds(extraction.delay_seconds as i64);
+
         if args.recurring || extraction.interval_seconds.is_some() {
-            let interval = extraction.interval_seconds.unwrap_or(86400) as u32; // Default daily
+            let interval = extraction.interval_seconds.unwrap_or(86400) as u32; // Default daily.
 
             debug!(
                 "Starting recurring scheduled session: initial delay {}s, interval {}s, task: '{}'",
                 extraction.delay_seconds, interval, extraction.task
             );
 
-            let state = RecurringState {
+            let state = CronTaskState {
                 task: extraction.task,
-                interval_seconds: interval,
+                is_recurring: true,
+                interval_seconds: Some(interval),
                 next_invocation_id: None,
                 chat_key: args.chat_key,
                 platform_type: args.platform_type,
                 external_chat_id: args.external_chat_id,
                 adapter_key: args.adapter_key,
+                created_at: now.to_rfc3339(),
+                last_run_at: None,
+                next_run_at: Some(next_run_at.to_rfc3339()),
+                run_count: 0,
             };
 
             let state_json = serde_json::to_string(&state).map_err(|e| {
                 HandlerError::from(anyhow::anyhow!("Failed to serialize state: {}", e))
             })?;
-            ctx.set("recurring", state_json);
+            ctx.set(STATE_KEY, state_json);
 
             let handle = ctx
                 .object_client::<ScheduledSessionClient>(ctx.key())
@@ -131,25 +166,47 @@ impl ScheduledSession for ScheduledSessionImpl {
 
             let inv_id = handle.invocation_id().await?;
 
-            let state_json: Option<String> = ctx.get("recurring").await?;
-            let mut state: RecurringState = state_json
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .ok_or_else(|| HandlerError::from(anyhow::anyhow!("State not found")))?;
+            // Write back the invocation ID.
+            let state_json: Option<String> = ctx.get(STATE_KEY).await?;
+            let mut state: CronTaskState =
+                state_json
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .ok_or_else(|| HandlerError::from(anyhow::anyhow!("State not found")))?;
             state.next_invocation_id = Some(inv_id.clone());
             let state_json = serde_json::to_string(&state).map_err(|e| {
                 HandlerError::from(anyhow::anyhow!("Failed to serialize state: {}", e))
             })?;
-            ctx.set("recurring", state_json);
+            ctx.set(STATE_KEY, state_json);
 
             debug!(
-                "Recurring session initialized, first execution scheduled with invocation id: {}",
+                "Recurring session initialised, first execution scheduled with invocation id: {}",
                 inv_id
             );
         } else {
             debug!(
-                "Starting one-shot scheduled session: sleeping for {} seconds before executing task: '{}'",
+                "Starting one-shot scheduled session: sleeping {}s before executing: '{}'",
                 extraction.delay_seconds, extraction.task
             );
+
+            // Persist state now so it is queryable during the sleep window.
+            let state = CronTaskState {
+                task: extraction.task.clone(),
+                is_recurring: false,
+                interval_seconds: None,
+                next_invocation_id: None,
+                chat_key: args.chat_key.clone(),
+                platform_type: args.platform_type.clone(),
+                external_chat_id: args.external_chat_id.clone(),
+                adapter_key: args.adapter_key.clone(),
+                created_at: now.to_rfc3339(),
+                last_run_at: None,
+                next_run_at: Some(next_run_at.to_rfc3339()),
+                run_count: 0,
+            };
+            let state_json = serde_json::to_string(&state).map_err(|e| {
+                HandlerError::from(anyhow::anyhow!("Failed to serialize state: {}", e))
+            })?;
+            ctx.set(STATE_KEY, state_json);
 
             ctx.sleep(Duration::from_secs(extraction.delay_seconds))
                 .await?;
@@ -159,7 +216,19 @@ impl ScheduledSession for ScheduledSessionImpl {
             match execute_task(&extraction.task, &config, &args.chat_key).await {
                 Ok(response) => {
                     debug!("Task completed successfully");
-                    println!("🤖 Scheduled task result: {}", response);
+
+                    // Update state to reflect the completed run.
+                    let state_json: Option<String> = ctx.get(STATE_KEY).await?;
+                    if let Some(s) = state_json {
+                        if let Ok(mut s) = serde_json::from_str::<CronTaskState>(&s) {
+                            s.last_run_at = Some(chrono::Utc::now().to_rfc3339());
+                            s.next_run_at = None;
+                            s.run_count += 1;
+                            if let Ok(json) = serde_json::to_string(&s) {
+                                ctx.set(STATE_KEY, json);
+                            }
+                        }
+                    }
 
                     let turn = Turn::scheduled_completion(&extraction.task, &response, true)
                         .with_platform_origin(PlatformOrigin {
@@ -191,12 +260,12 @@ impl ScheduledSession for ScheduledSessionImpl {
     }
 
     async fn execute(&self, ctx: ObjectContext<'_>) -> HandlerResult<()> {
-        let state_json: Option<String> = ctx.get("recurring").await?;
+        let state_json: Option<String> = ctx.get(STATE_KEY).await?;
 
-        let state: RecurringState = match state_json.and_then(|s| serde_json::from_str(&s).ok()) {
+        let state: CronTaskState = match state_json.and_then(|s| serde_json::from_str(&s).ok()) {
             Some(s) => s,
             None => {
-                debug!("No recurring state found, session was likely cancelled");
+                debug!("No cron state found, session was likely cancelled");
                 return Ok(());
             }
         };
@@ -214,7 +283,10 @@ impl ScheduledSession for ScheduledSessionImpl {
         let elapsed = start.elapsed().as_secs();
         let next_delay = state
             .interval_seconds
+            .unwrap_or(86400)
             .saturating_sub(elapsed.try_into().unwrap_or(u32::MAX));
+
+        let now = chrono::Utc::now();
 
         let (clean_response, is_complete) = match llm_result {
             Ok(response) => {
@@ -226,10 +298,19 @@ impl ScheduledSession for ScheduledSessionImpl {
                     .trim()
                     .to_string();
 
-                println!("🤖 Recurring task result: {}", clean_response);
-
                 if is_complete {
                     debug!("Task completion marker found, stopping recurrence");
+
+                    // Update state one last time before clearing.
+                    let mut new_state = state.clone();
+                    new_state.last_run_at = Some(now.to_rfc3339());
+                    new_state.next_run_at = None;
+                    new_state.next_invocation_id = None;
+                    new_state.run_count += 1;
+                    if let Ok(json) = serde_json::to_string(&new_state) {
+                        ctx.set(STATE_KEY, json);
+                    }
+
                     ctx.clear_all();
                 } else {
                     let handle = ctx
@@ -238,16 +319,20 @@ impl ScheduledSession for ScheduledSessionImpl {
                         .send_after(Duration::from_secs(next_delay as u64));
 
                     let inv_id = handle.invocation_id().await?;
+                    let next_run_at = now + chrono::Duration::seconds(next_delay as i64);
 
                     let mut new_state = state.clone();
+                    new_state.last_run_at = Some(now.to_rfc3339());
+                    new_state.next_run_at = Some(next_run_at.to_rfc3339());
                     new_state.next_invocation_id = Some(inv_id.clone());
+                    new_state.run_count += 1;
                     let state_json = serde_json::to_string(&new_state).map_err(|e| {
                         HandlerError::from(anyhow::anyhow!("Failed to serialize state: {}", e))
                     })?;
-                    ctx.set("recurring", state_json);
+                    ctx.set(STATE_KEY, state_json);
 
                     debug!(
-                        "Scheduled next execution in {} seconds with invocation id: {}",
+                        "Scheduled next execution in {}s (invocation id: {})",
                         next_delay, inv_id
                     );
                 }
@@ -263,16 +348,20 @@ impl ScheduledSession for ScheduledSessionImpl {
                     .send_after(Duration::from_secs(next_delay as u64));
 
                 let inv_id = handle.invocation_id().await?;
+                let next_run_at = now + chrono::Duration::seconds(next_delay as i64);
 
                 let mut new_state = state.clone();
+                new_state.last_run_at = Some(now.to_rfc3339());
+                new_state.next_run_at = Some(next_run_at.to_rfc3339());
                 new_state.next_invocation_id = Some(inv_id.clone());
+                new_state.run_count += 1;
                 let state_json = serde_json::to_string(&new_state).map_err(|e| {
                     HandlerError::from(anyhow::anyhow!("Failed to serialize state: {}", e))
                 })?;
-                ctx.set("recurring", state_json);
+                ctx.set(STATE_KEY, state_json);
 
                 debug!(
-                    "Task failed but scheduled next execution in {} seconds with invocation id: {}",
+                    "Task failed but next execution scheduled in {}s (invocation id: {})",
                     next_delay, inv_id
                 );
 
@@ -300,10 +389,10 @@ impl ScheduledSession for ScheduledSessionImpl {
     }
 
     async fn cancel(&self, ctx: ObjectContext<'_>) -> HandlerResult<()> {
-        let state_json: Option<String> = ctx.get("recurring").await?;
+        let state_json: Option<String> = ctx.get(STATE_KEY).await?;
 
         if let Some(state_json) = state_json
-            && let Ok(state) = serde_json::from_str::<RecurringState>(&state_json)
+            && let Ok(state) = serde_json::from_str::<CronTaskState>(&state_json)
             && let Some(inv_id) = state.next_invocation_id
         {
             debug!("Cancelling pending invocation: {}", inv_id);
@@ -311,9 +400,20 @@ impl ScheduledSession for ScheduledSessionImpl {
         }
 
         ctx.clear_all();
-        debug!("Recurring session cancelled and state cleared");
+        debug!("Scheduled session cancelled and state cleared");
 
         Ok(())
+    }
+
+    async fn status(
+        &self,
+        ctx: SharedObjectContext<'_>,
+    ) -> HandlerResult<Json<Option<CronTaskStatus>>> {
+        let state_json: Option<String> = ctx.get(STATE_KEY).await?;
+        let status = state_json
+            .and_then(|s| serde_json::from_str::<CronTaskState>(&s).ok())
+            .map(|s| s.into_status());
+        Ok(Json(status))
     }
 }
 
@@ -379,8 +479,7 @@ async fn extract_schedule_info(
 
     debug!("Schedule extraction response: {}", content);
 
-    // Try to parse the JSON from the response
-    // Handle case where LLM might wrap it in markdown code blocks
+    // Handle case where LLM might wrap it in markdown code blocks.
     let json_str = content
         .trim()
         .trim_start_matches("```json")

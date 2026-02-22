@@ -36,11 +36,34 @@ pub struct ScheduleArgs {
     pub adapter_key: String,
 }
 
+/// Inspection snapshot for a scheduled/cron task.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CronTaskStatus {
+    /// Human-readable task description (timing language stripped).
+    pub task: String,
+    /// True for recurring tasks, false for one-shot.
+    pub is_recurring: bool,
+    /// RFC 3339 timestamp of when the task was first created.
+    pub created_at: String,
+    /// RFC 3339 timestamp of the most recent execution, if any.
+    pub last_run_at: Option<String>,
+    /// RFC 3339 timestamp of the next scheduled execution, if any.
+    pub next_run_at: Option<String>,
+    /// How many times this task has executed so far.
+    pub run_count: u32,
+    /// For recurring tasks, the interval between executions in seconds.
+    pub interval_seconds: Option<u32>,
+}
+
 #[restate_sdk::object]
 pub trait ScheduledSession {
     async fn run(spec: Json<ScheduleArgs>) -> HandlerResult<()>;
     async fn execute() -> HandlerResult<()>;
     async fn cancel() -> HandlerResult<()>;
+    /// Returns the current inspection state of this scheduled task.
+    /// Returns None if the task has not been initialised or has been cleared.
+    #[shared]
+    async fn status() -> HandlerResult<Json<Option<CronTaskStatus>>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
