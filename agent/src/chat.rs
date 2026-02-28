@@ -133,7 +133,7 @@ impl ChatSession for ChatSessionImpl {
 }
 
 impl ChatSessionImpl {
-    #[instrument(skip(self, ctx), fields(chat_key))]
+    #[instrument(skip(self, ctx, turns), fields(chat_key))]
     async fn handle_user_message(
         &self,
         ctx: ObjectContext<'_>,
